@@ -1,0 +1,24 @@
+# Root safety net — sub-projects carry their own .gitignore
+
+# Dependencies
+node_modules/
+
+# Build outputs
+frontend/.next/
+frontend/out/
+backend/dist/
+backend/build/
+backend/.tmp/
+.cache/
+
+# Environment / secrets (never commit)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
