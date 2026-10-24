@@ -96,6 +96,11 @@ test('journeys 5→10 — authenticated member: login, create, listing, reply, p
   const jwtCookie = (await page.context().cookies()).find((c) => c.name === 'lr_strapi_jwt');
   expect(jwtCookie, 'session cookie must be set').toBeTruthy();
   expect(jwtCookie?.httpOnly, 'session cookie must be HttpOnly').toBe(true);
+  // Post-audit regression: SameSite stays Lax; on the plain-http localhost
+  // demo the Secure flag must stay unset (browsers refuse Secure cookies
+  // over http — it is resolved per request in lib/cookie-secure.ts).
+  expect(jwtCookie?.sameSite, 'session cookie must stay SameSite=Lax').toBe('Lax');
+  expect(jwtCookie?.secure, 'http localhost must not mark the session Secure').toBe(false);
   const browserVisibleCookies = await page.evaluate(() => document.cookie);
   expect(browserVisibleCookies).not.toContain('lr_strapi_jwt');
 

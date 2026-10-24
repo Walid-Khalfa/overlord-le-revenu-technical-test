@@ -1,56 +1,154 @@
-# Communauté Le Revenu — technical test
+# Communauté Le Revenu — test technique
 
-Full-stack community space for the readers of *Le Revenu*, built for the developer
-technical test: a screen of the supplied HTML prototype
-(`maquette-communaute-le-revenu.html`) transformed into a structured, maintainable
-application — **Next.js (App Router)** for the frontend, **Strapi v5** for the
-backend and business logic, **PostgreSQL** for persistence.
+Espace communautaire destiné aux lecteurs du *Revenu*, développé dans le cadre du
+test technique : une partie du prototype HTML fourni
+(`maquette-communaute-le-revenu.html`) est transformée en application structurée
+et maintenable — **Next.js (App Router)** côté frontend, **Strapi v5** pour la
+logique métier et la persistance, **PostgreSQL** pour les données.
 
-> All business logic and persistence go through Strapi. Next.js never accesses
-> PostgreSQL directly and implements no parallel business backend.
+> L'intégralité de la logique métier et de la persistance passe par Strapi.
+> Next.js n'accède jamais directement à PostgreSQL et n'implémente aucun
+> backend parallèle.
 
-## Stack
+## 1. Aperçu du projet
 
-| Layer | Technology |
+Le brief demande de remplacer une portion du prototype statique par une
+application réelle : un fil de discussions financières (par espace thématique),
+une page de détail par discussion avec ses réponses, la publication de nouvelles
+discussions avec validation, et une notion minimale de membres authentifiés.
+Le cahier des charges impose Strapi pour toute la logique métier et pour
+l'exposition REST, et limite Next.js au rendu et à l'orchestration.
+
+## 2. Fonctionnalités implémentées
+
+- **Fil communautaire** (`/`) — discussions servies par l'API Strapi : titre,
+  auteur, catégorie, nombre de réponses, date de publication ; filtrage par
+  catégorie (`?espace=…`) et onglets de tri de la maquette (`?tri=…`,
+  Tendances / Récentes / Sans réponse) ; états de chargement, vides et erreurs ;
+  aucune discussion codée en dur dans les composants React.
+- **Détail d'une discussion** (`/discussions/<documentId>`) — URL propre par
+  discussion, contenu complet, réponses associées ; les réponses publiées sont
+  persistées dans PostgreSQL via Strapi.
+- **Création** (`/publier`) — type (question / discussion), titre ≥ 10
+  caractères, contenu requis, choix de catégorie ; validation instantanée côté
+  client (miroir des règles Strapi), re-validation serveur, puis redirection
+  vers la discussion créée.
+- **Session sécurisée minimale** — actions serveur de connexion/déconnexion,
+  cookie httpOnly portant le JWT Strapi, attribution d'auteur imposée côté
+  serveur.
+
+## 3. Stack technique
+
+| Couche | Technologies |
 |---|---|
 | Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS |
-| Backend | Strapi v5 (5.59.0), TypeScript, REST API, Users & Permissions |
-| Database | PostgreSQL 16 (Docker Compose) |
-| Tests | Node.js built-in test runner (API) · Playwright (E2E journeys) |
+| Backend | Strapi v5 (5.59.0), TypeScript, API REST, Users & Permissions |
+| Base de données | PostgreSQL 16 (Docker Compose) |
+| Tests | Node.js test runner intégré (API, unitaire) · Playwright (E2E) |
 
-## Repository structure
+## 4. Architecture
+
+```mermaid
+flowchart LR
+    U["Navigateur"] --> RSC["Next.js pages RSC<br/>fil / · détail · publier"]
+    U -- "formulaire" --> SA["Server Actions<br/>login / logout / publication"]
+    SA -- "Set-Cookie jwt httpOnly" --> U
+    RSC --> DL["lib/community<br/>use cache + cacheTag"]
+    SA -- "Bearer JWT" --> API["lib/strapi<br/>client REST typé"]
+    DL --> API
+    API --> CTL["Strapi v5<br/>contrôleurs · validation · permissions"]
+    CTL --> PG[("PostgreSQL 16<br/>docker compose")]
+```
+
+Points clés : le JWT reste dans un cookie httpOnly (le frontend le relaie vers
+Strapi via `Bearer`), le filtrage et le tri côté backend, la réécriture
+d'URL 404 réelle par le proxy, et une lecture revalidée par écriture
+(`updateTag` dans les actions).
+
+## 5. Structure du projet
 
 ```
-frontend/                      Next.js 16 app
-  app/                         routes: community feed, discussion detail, /publier
-    actions/                   server actions (login, logout, create discussion/reply)
-  components/                  UI ported from the mockup (cards, forms, member panel…)
+frontend/                      Next.js 16
+  app/                         routes : fil /, détail /discussions/[slug], /publier
+    actions/                   server actions (login, logout, création discussion/réponse)
+  components/                  UI dérivée de la maquette (cartes, formulaires, panneau membre…)
   lib/
-    strapi.ts                  typed Strapi REST client (single integration point)
-    community.ts               data layer: cached reads + write helpers
-    auth.ts                    httpOnly session-cookie helpers
-  e2e/                         Playwright journeys
-  proxy.ts                     real-404 handling for unknown discussion ids
-backend/                       Strapi v5 project
-  src/api/{category,discussion,reply}/   controllers, services, routes
-  src/utils/                   seed.ts (demo data), serialize.ts, validation.ts
-  tests/                       automated API tests + cleanup-ph5.sql
-  types/generated/             Strapi-generated TypeScript types
-docker-compose.yml             PostgreSQL service (the only container)
-maquette-communaute-le-revenu.html   original prototype (visual reference)
-Test_technique_*.pdf           original assessment brief
-docs/                          acceptance matrix + technical-review plan
+    strapi.ts                  client REST Strapi typé (point d'intégration unique)
+    community.ts               couche données : lectures mises en cache + helpers d'écriture
+    auth.ts                    helpers session (cookies httpOnly)
+    cookie-secure.ts           résolution pure du flag Secure (testée unitairement)
+  e2e/                         parcours Playwright + mobile-check.mjs
+  tests/                       test unitaire du flag Secure (node --test)
+  proxy.ts                     404 réelle pour un id de discussion inconnu
+backend/                       Strapi v5
+  src/api/{category,discussion,reply}/   schémas, contrôleurs, services, routes
+  src/utils/                   seed.ts (données de démo), serialize.ts, validation.ts
+  tests/                       tests API node:test + cleanup-ph5.sql
+  types/generated/             types TypeScript générés par Strapi
+docker-compose.yml             service PostgreSQL (le seul conteneur)
+maquette-communaute-le-revenu.html   prototype original (référence visuelle)
+Test_technique_*.pdf           brief du test technique
+docs/                          matrice d'acceptance + guide de revue technique
 ```
 
-## Prerequisites
+## 6. Prérequis
 
-- Docker Desktop (Compose v2)
-- Node.js ≥ 20.19 with npm ≥ 10 (development was done on Node 24)
-- A local port free on **5432** (PostgreSQL), **1337** (Strapi) and **3000** (Next.js)
+- Docker Desktop (Compose v2).
+- Node.js ≥ 20.19 avec npm ≥ 10 (développement réalisé sous Node 24).
+- Ports locaux libres : **5432** (PostgreSQL), **1337** (Strapi), **3000** (Next.js).
 
-## 1. Environment configuration
+## 7. Quick Start — démarrage reproductible
 
-Copy the three templates — the real files must never be committed:
+Depuis une machine vierge, cloner puis configurer les variables d'environnement
+(section 8), puis lancer les trois composants. Utilisez **un terminal par
+service** (ou exécutez les blocs successivement).
+
+### 7.1 Base de données (racine du dépôt)
+
+```sh
+docker compose up -d
+docker compose ps        # attendre  « healthy »  (pg_isready)
+```
+
+### 7.2 Backend Strapi (dossier `backend/`)
+
+```sh
+cd backend
+npm ci
+npm run develop          # http://localhost:1337
+```
+
+Au premier démarrage, PostgreSQL reçoit le schéma Strapi puis, parce que
+`SEED_DEMO_DATA=true` est présent dans `backend/.env`, le seed idempotent de
+`src/utils/seed.ts` crée uniquement ce qui manque :
+
+- **11 catégories thématiques** (Bourse, Économie, Épargne…) ;
+- **3 membres de démonstration** : `demo_marie`, `demo_paul`, `demo_sophie` ;
+- **6 discussions de démonstration avec 5 réponses**.
+
+Relancer `npm run develop` ne duplique jamais rien (idempotent). Aucun panneau
+d'administration n'est initialisé — le brief n'en a pas besoin.
+
+### 7.3 Frontend Next.js (dossier `frontend/`)
+
+```sh
+cd frontend
+npm ci
+npm run dev              # http://localhost:3000
+```
+
+### 7.4 Vérifier le démarrage
+
+| Vérification | Commande | Attendu |
+|---|---|---|
+| PostgreSQL | `docker compose ps` | `le-revenu-postgres … (healthy)` |
+| Strapi | `curl -i http://localhost:1337/_health` | 204 No Content |
+| Frontend | ouvrir <http://localhost:3000> | fil affiché avec les données seed |
+
+## 8. Configuration détaillée des variables d'environnement
+
+Copier les trois gabarits — les fichiers réels ne doivent **jamais** être
+commités (ils sont ignorés par Git) :
 
 ```sh
 cp .env.example .env
@@ -58,189 +156,190 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 ```
 
-(On Windows PowerShell, `cp`/`Copy-Item` behave the same.)
+(`cp` fonctionne tel quel sous PowerShell grâce à l'alias `Copy-Item`.)
 
-Then fill in the `change-me` values:
+Compléter les valeurs `change-me` :
 
-| File | Variable | Value |
+| Fichier | Variable | Valeur |
 |---|---|---|
-| `.env` | `POSTGRES_PASSWORD` | any strong local password |
-| `backend/.env` | `APP_KEYS` | 4 comma-separated random strings |
-| `backend/.env` | `API_TOKEN_SALT`, `ADMIN_JWT_SECRET`, `JWT_SECRET`, `TRANSFER_TOKEN_SALT`, `ENCRYPTION_KEY` | random strings |
-| `backend/.env` | `DATABASE_PASSWORD` | same value as `POSTGRES_PASSWORD` |
-| `backend/.env` | `SEED_DEMO_DATA` | `true` (runs the idempotent demo seed at boot) |
-| `backend/.env` | `SEED_USER_PASSWORD` | a demo-only member password |
+| `.env` | `POSTGRES_PASSWORD` | mot de passe local fort |
+| `backend/.env` | `APP_KEYS` | 4 chaînes aléatoires séparées par des virgules |
+| `backend/.env` | `API_TOKEN_SALT`, `ADMIN_JWT_SECRET`, `JWT_SECRET`, `TRANSFER_TOKEN_SALT`, `ENCRYPTION_KEY` | chaînes aléatoires |
+| `backend/.env` | `DATABASE_PASSWORD` | même valeur que `POSTGRES_PASSWORD` |
+| `backend/.env` | `SEED_DEMO_DATA` | `true` (seed idempotent au démarrage) |
+| `backend/.env` | `SEED_USER_PASSWORD` | mot de passe réservé aux membres de démo |
 | `frontend/.env.local` | `NEXT_PUBLIC_STRAPI_URL` | `http://localhost:1337` |
 
-Generate random values with, for example:
+Générer des valeurs aléatoires, par exemple :
 
 ```sh
 node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
 ```
 
-Optional frontend flags: `COOKIE_SECURE=true` once the app is served over HTTPS
-(localhost needs it to stay `false` — browsers refuse secure cookies over http).
+Flag optionnel frontend : `COOKIE_SECURE=true` force le flag de cookie
+`Secure` même sans en-tête HTTPS. Sinon il est résolu **par requête** :
+`x-forwarded-proto: https` ⇒ `Secure` automatique (production derrière un
+proxy TLS) ; le `http://localhost` de démo reste sans `Secure`, car les
+navigateurs refusent les cookies Secure reçus sur http.
 
-## 2. PostgreSQL via Docker Compose
+## 9. Comptes de démonstration et authentification
 
-```sh
-docker compose up -d
-docker compose ps        # le-revenu-postgres should reach "healthy" (pg_isready)
-```
+Publier une discussion ou une réponse exige d'être connecté comme membre
+(le backend refuse les écritures anonymes). Connexion via le panneau
+**Espace membre** présent sur toutes les pages :
 
-The first start creates the `pgdata` volume and the `le_revenu` database.
-The Compose file only exposes ports and storage — no application services run inside it.
+- identifiants : `demo_marie`, `demo_paul` ou `demo_sophie` (minuscules, avec
+  underscore) ;
+- mot de passe : la valeur fixée dans `backend/.env` sous
+  `SEED_USER_PASSWORD` (le comportement par défaut du code est documenté en un
+  seul endroit, dans `backend/src/utils/seed.ts`).
 
-## 3. Strapi backend
+La session est un JWT émis par Strapi conservé dans un cookie **httpOnly** —
+jamais lisible par le JavaScript du navigateur — et l'auteur de chaque
+soumission est déduit côté serveur depuis ce jeton.
 
-```sh
-cd backend
-npm ci          # or npm install
-npm run develop # http://localhost:1337
-```
+## 10. Routes applicatives & API
 
-First boot: PostgreSQL gets its schema (Relations/create… Strapi v5 document store)
-and, because `SEED_DEMO_DATA=true` in the environment, the idempotent demo seed of
-`src/utils/seed.ts` creates only what is missing:
+### Pages (Next.js)
 
-- **11 thematic categories** (Bourse, Économie, Épargne…)
-- **3 demo members**: `demo_marie`, `demo_paul`, `demo_sophie`
-- **6 demo discussions with 5 replies**
+| Route | Rôle |
+|---|---|
+| `/` | fil de discussions : filtres `?espace=`, tri `?tri=` |
+| `/discussions/<documentId>` | détail d'une discussion + réponses |
+| `/publier` | formulaire de création (200/404/états gérés) |
 
-Re-running `npm run develop` re-checks and never duplicates (safe on existing data).
-No Strapi admin panel is bootstrapped — the assessment needs none.
+### API REST (Strapi)
 
-Useful check (Strapi health):
+| Endpoint | Méthodes | Accès | Notes |
+|---|---|---|---|
+| `/api/categories` | GET | public | catalogue des espaces |
+| `/api/discussions` | GET, POST | GET public · POST authentifié | paramètres `filters`/`sort`/`pagination` ; `documentId` en clef |
+| `/api/discussions/<documentId>` | GET | public | détail avec relations peuplées |
+| `/api/replies` | POST | authentifié | liée à la discussion, auteur imposé |
+| `/api/auth/local` | POST | public | connexion membre (utilisée par le panneau) |
+| `/_health` | GET | public | 204 quand Strapi est prêt |
 
-```sh
-curl -i http://localhost:1337/_health   # 204 No Content
-```
+Erreurs cohérentes : 400 avec messages par champ, 403 écriture non autorisée,
+404 id inconnu. Aucune route de mise à jour ou suppression n'est ouverte.
 
-## 4. Next.js frontend
+## 11. Tests automatisés et vérifications
 
-```sh
-cd frontend
-npm ci          # or npm install
-npm run dev     # http://localhost:3000
-```
+Prérequis : les sections 7.1–7.3 fonctionnent (PostgreSQL healthy, Strapi sur
+1337, Next dev sur 3000). Les tests dépendent de ces services réels — ils ne
+peuvent pas s'exécuter sans l'infrastructure locale.
 
-Production check:
-
-```sh
-npm run build && npm start
-```
-
-## 5. Demo authentication (without publishing any password)
-
-Publishing a discussion or a reply requires being logged in as a member
-(the backend refuses anonymous writes). Log in through the **Espace membre**
-panel rendered on every page:
-
-- identifiers: `demo_marie`, `demo_paul` or `demo_sophie` (lowercase, with underscore);
-- password: the value you set for `SEED_USER_PASSWORD` in `backend/.env`
-  (matching default documented once, in the backend source, `src/utils/seed.ts`).
-
-The session is a Strapi-issued JWT kept in an **httpOnly** cookie — it is never
-readable by browser JavaScript, and the author of every submission is derived
-server-side from that token.
-
-## Application features
-
-- **Community feed** (`/`): discussions straight from Strapi — title, author,
-  category, reply count, publication date — with category filtering (`?espace=…`)
-  and the mockup's sort tabs (`?tri=…`, Tendances / Récentes / Sans réponse)
-  plus empty states and skeletons.
-- **Discussion detail** (`/discussions/<documentId>`): clean URL per discussion,
-  full content with associated replies, reply publication persisted in PostgreSQL via Strapi.
-- **Creation** (`/publier`): type (question/discussion), title ≥ 10 characters,
-  required content, category selection — instant client validation mirroring the
-  Strapi rules, server-side re-validation, then redirect to the new discussion.
-- **Minimal secure session**: login/logout server actions, httpOnly cookies,
-  backend permission matrix enforced by Strapi.
-
-## Backend architecture & security decisions
-
-- **Content types** (Strapi v5): `Category` (name, slug, description),
-  `Discussion` (title, content, type, author → user; category; replies → reply),
-  `Reply` (content, author → user; discussion → discussion). The user entity is
-  the native Users & Permissions model.
-- **Custom controllers** on `discussion` and `reply` (creation + list/find-one):
-  author is always taken from the JWT, never from the payload; relations are
-  populated in an optimized way and serialized flat (documentId + only safe user
-  fields: `id` and `username` — never email/provider/password); consistent HTTP
-  errors (400 with per-field messages, 403 for unauthorized writes, 404 unknown).
-- **Validation** runs on Strapi (`title` 10–150, `content` required, type enum,
-  category must exist, reply ≥ 2 characters) — independent of the frontend checks.
-- **Permissions** are configured in Strapi, not app-side:
-  public role = read only (find/find-one); authenticated role = read + create
-  discussion/reply; **no update and no delete** for anyone.
-- **Frontend data access**: a single typed client (`lib/strapi.ts`); reads are
-  cached (`use cache` + `cacheTag('community')`, refreshed by the write actions
-  with `updateTag`); every URL parameter (category/sort) is translated into a
-  backend query (`filters`, `sort`, `pagination`).
-- **Session**: server actions set the httpOnly JWT cookie; every page rendering
-  parts that depend on the session does it behind a Suspense boundary
-  (Cache Components-ready code).
-
-## Automated tests
-
-Prerequisites: sections 2–4 running (PostgreSQL healthy, Strapi on 1337, Next dev on 3000).
-
-Backend (Node built-in runner — zero extra dependency):
+Depuis la **racine** du dépôt :
 
 ```sh
-cd backend
-npm test   # 23 tests: validation, 403s, author spoofing, replies, security regressions
+cd backend && npm test
 ```
 
-E2E journeys (Playwright):
+- **23 tests d'intégration backend** (`node --test`, `backend/tests/`) :
+  bornes de validation du titre/contenu/catégorie, refus 403 des anonymes,
+  protection contre l'usurpation d'auteur (paramètre `author` ignoré,
+  JWT gagne), création de réponse et association, régressions de sécurité
+  (aucun appel à une route de modification/suppression, absence de champs
+  privés dans les payloads, aucun jeton dans le HTML rendu).
+
+Depuis le dossier **`frontend`** :
 
 ```sh
-cd frontend
-npx playwright test   # 5 scenarios = the 10 mandatory journeys
+npm test              # test unitaire : contrat du flag Secure (node --test)
+npx playwright test   # 5 scénarios E2E = les 10 parcours imposés
+node e2e/mobile-check.mjs   # 390×844 : pas de débordement horizontal, barre basse, sidebar masquée
 ```
 
-Mobile layout check (390×844: no horizontal overflow, bottom nav, hidden sidebar):
+Dernière brique de vérification (qualité statique et builds de production) :
 
 ```sh
-cd frontend
-node e2e/mobile-check.mjs
+cd frontend && npx tsc --noEmit && npm run lint && npm run build
+cd ../backend && npm run build
 ```
 
-Both suites create only rows marked `[PH5TEST]` / `[E2E-PH5-…]`.
-
-## Database cleanup procedure (test fixtures)
-
-After running the suites, the marked rows can be removed without touching seed
-data, demo rows or anything else:
+**Nettoyage sécurisé des fixtures de tests.** Les suites ne créent que des
+lignes marquées `[PH5TEST]` / `[E2E-PH5-…]`. Le script tracké
+[`backend/tests/cleanup-ph5.sql`](backend/tests/cleanup-ph5.sql) supprime
+exclusivement ces lignes (tables `*_lnk` d'abord) dans une transaction
+idempotente — sous Windows PowerShell :
 
 ```sh
 Get-Content backend/tests/cleanup-ph5.sql | docker compose exec -i postgres psql -U strapi -d le_revenu
 ```
 
-(or the bash equivalent: `docker compose exec -i postgres psql -U strapi -d le_revenu < backend/tests/cleanup-ph5.sql`).
-
-The script is idempotent and transactional. Suggested verification afterwards:
+Sous Linux/macOS :
 
 ```sh
-docker compose exec -T postgres psql -U strapi -d le_revenu -tAc \
-  "SELECT (SELECT count(*) FROM categories), (SELECT count(*) FROM discussions), (SELECT count(*) FROM replies)"
+docker compose exec -i postgres psql -U strapi -d le_revenu < backend/tests/cleanup-ph5.sql
 ```
 
-## Known limitations & possible improvements
+Vérification après nettoyage (état de référence : 11 / 6 / 5 / 3) :
 
-- **“Tendances” / “Sans réponse” tabs**: the category filter, base ordering and
-  pagination are executed by the backend; the two mockup-derived tabs are then
-  derived from the populated replies of the fetched page (Strapi v5 REST has no
-  native sort/filter on relation counts — future phase could add a dedicated endpoint).
-- **Pagination**: the backend passes pagination through (`pageSize` 25) but the
-  feed shows one page — true infinite scrolling/pagination is a bonus item.
-- **Search, votes “Utile”, user profiles**: bonus items, intentionally not implemented
-  (the brief gives the core scope priority).
-- **Admin panel**: not bootstrapped (not required by the assessment); permission
-  menu changes would go through the admin.
-- **Local HTTPS**: the `secure` cookie flag stays opt-in for plain-localhost demos.
-- **Docker networking on some Windows hosts**: when Docker's default address pools
-  are exhausted, `docker compose up` may fail to create the project network —
-  recreating Docker's `default-address-pools` configuration is a host-level fix.
-- Strapi regenerates `backend/types/generated/*.d.ts` on boot; ignore EOL-only churn.
+```sh
+docker compose exec -T postgres psql -U strapi -d le_revenu -tAc "SELECT (SELECT count(*) FROM categories), (SELECT count(*) FROM discussions), (SELECT count(*) FROM replies), (SELECT count(*) FROM up_users)"
+```
+
+## 12. Mesures de sécurité
+
+- **Aucun accès PostgreSQL depuis le frontend** — uniquement l'objet
+  `lib/strapi.ts` ; aucune dépendance de driver de base de données.
+- **JWT httpOnly + SameSite=Lax** ; flag `Secure` résolu par requête
+  (`x-forwarded-proto: https` ⇒ Secure ; localhost http sans Secure ;
+  `COOKIE_SECURE=true` en override manuel) — contrat verrouillé par un test
+  unitaire et une assertion E2E.
+- **Permissions côté Strapi, jamais côté app** : rôle public en lecture seule,
+  rôle authentifié avec ajout de créations discussion/réponse, **aucune
+  modification ni suppression ouverte**.
+- **Auteur dérivé du JWT** : le champ `author` du payload est ignoré (testé
+  contre l'usurpation).
+- **Validation serveur** : titre 10–150, contenu requis, type en liste,
+  catégorie existante, réponse ≥ 2 caractères — indépendante des contrôles
+  client (miroir informatif uniquement).
+- **Sérialisation limitée** : seuls `id` et `username` de l'utilisateur sont
+  exposés ; jamais `email`, `provider`, `password` ou champs privés.
+- proxy : un id de discussion inconnu est réécrit vers une vraie page 404
+  avant rendu (dégradation gracieuse si Strapi est indisponible).
+- Fichiers `.env` jamais commités ; les secrets vivent uniquement dans les
+  fichiers locaux ignorés.
+
+## 13. Décisions techniques & limites connues
+
+- **Lecture revalidée par écriture** : lectures mises en cache (`use cache` +
+  `cacheTag('community')`) ; les actions d'écriture appellent `updateTag`
+  avant redirection — l'utilisateur relit sa contribution immédiatement.
+- **Relations auteur `manyToOne`** (correction post-audit approuvée, appliquée
+  sans migration destructive : `discussions_author_lnk` et
+  `replies_author_lnk` conservent leurs lignes, index et FK inchangés) — un
+  membre peut naturellement poster plusieurs discussions et réponses.
+- **Double requête Strapi sur le détail** (tradeoff documenté) : le proxy
+  vérifie l'existence (rejeu 404 réel) puis la page charge le contenu ; le
+  cache du proxy éviterait un 404 erroné sur une discussion fraîchement créée —
+  privilège la justesse sur l'appel supplémentaire.
+- **Onglets dérivés sur la page chargée (25 éléments)** : filtrage, tri par
+  date et pagination passent par le backend ; les deux onglets « Tendances » /
+  « Sans réponse », dérivés de la maquette, sont calculés sur la page peuplée
+  (pas de tri natif sur compteur de relations dans Strapi v5 REST).
+- **Pagination** : `pageSize` 25 ; le fil affiche une seule page — la
+  pagination ou le scroll infini relèvent des bonus.
+- **Recherche, votes « Utile », profils, léger bootstrap admin** — bonus
+  volontairement non implémentés (priorité au périmètre cœur).
+- **HTTPS local** : le flag Secure suit la résolution par requête décrite en
+  section 12 ; un déploiement HTTPS réel l'obtient automatiquement.
+- **Réseau Docker sous Windows** : si les pools d'adresses par défaut de
+  Docker Desktop sont épuisés, `docker compose up` peut échouer à créer le
+  réseau du projet — ajuster la configuration `default-address-pools` au
+  niveau de l'hôte.
+- Strapi régénère `backend/types/generated/*.d.ts` au démarrage — ignorer le
+  churn EOL.
+
+## 14. Documentation complémentaire
+
+- [`docs/acceptance-matrix.md`](docs/acceptance-matrix.md) — exigence par
+  exigence du brief : implémentation, vérifications exécutées, résultats,
+  limites ; inclut l'annexe d'audit indépendant et le journal de la migration
+  d'auteur.
+- [`docs/technical-review.md`](docs/technical-review.md) — plan de revue
+  technique de 30 minutes (architecture, modèles, flux, sécurité, tests,
+  arbitrages).
+- [`maquette-communaute-le-revenu.html`](maquette-communaute-le-revenu.html) —
+  prototype original (référence visuelle du rendu).
+- Le brief original : `Test_technique_Developpeur_Full_Stack_Le_Revenu.pdf`.

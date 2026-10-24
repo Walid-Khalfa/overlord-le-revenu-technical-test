@@ -10,7 +10,7 @@
 
 import { cookies } from 'next/headers';
 import { login } from '@/lib/community';
-import { JWT_COOKIE, MEMBER_COOKIE, SESSION_MAX_AGE } from '@/lib/auth';
+import { JWT_COOKIE, MEMBER_COOKIE, sessionCookieOptions } from '@/lib/auth';
 
 export interface AuthFormState {
   ok?: boolean;
@@ -18,15 +18,7 @@ export interface AuthFormState {
   error?: string;
 }
 
-const secureCookie = process.env.COOKIE_SECURE === 'true';
-
-const loginCookieOptions = () => ({
-  httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: secureCookie,
-  path: '/',
-  maxAge: SESSION_MAX_AGE,
-});
+const loginCookieOptions = async () => sessionCookieOptions();
 
 /** Login with a demo member's username + password. */
 export async function loginAction(_prev: AuthFormState, formData: FormData): Promise<AuthFormState> {
@@ -51,8 +43,9 @@ export async function loginAction(_prev: AuthFormState, formData: FormData): Pro
   }
 
   const jar = await cookies();
-  jar.set(JWT_COOKIE, jwt, loginCookieOptions());
-  jar.set(MEMBER_COOKIE, username, loginCookieOptions());
+  const options = await loginCookieOptions();
+  jar.set(JWT_COOKIE, jwt, options);
+  jar.set(MEMBER_COOKIE, username, options);
 
   // Mutating a cookie re-renders the current route inside the action
   // response: the member panel switches to its connected view immediately.

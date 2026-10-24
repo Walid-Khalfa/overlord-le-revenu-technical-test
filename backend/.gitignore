@@ -68,6 +68,8 @@ $RECYCLE.BIN/
 .tmp
 *.log
 *.sql
+# Exception: the tested Phase-5 teardown is a tracked deliverable (README §cleanup).
+!tests/cleanup-ph5.sql
 *.sqlite
 *.sqlite3
 

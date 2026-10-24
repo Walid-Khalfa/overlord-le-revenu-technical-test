@@ -32,7 +32,7 @@ Phases 1–5. Nothing is marked PASS without evidence.
 | **§3.3** | Input validation, authorization, consistent HTTP error handling | `backend/src/utils/validation.ts` + controllers (400 with per-field errors, 403, 404, 201 `{data}`) | Phase 5 tests assert exact statuses/shapes | **PASS** | — |
 | **§3.4** | Document Service API used for custom business operations | controllers use `strapi documents` service for create/populate | controller source + executed creates | **PASS** | — |
 | **§4.1** | Reusable components, separated responsibilities | `frontend/components/*` (card, forms, chips, tabs, member panel, states…) | code organization chart in README | **PASS** | — |
-| **§4.2** | Centralized and typed Strapi calls | `lib/strapi.ts` typed client + `lib/community.ts` data layer; `proxy.ts` reuses its base-URL export | grep: no other `fetch(localhost:1337)` call site | **PASS** | — |
+| **§4.2** | Centralized and typed Strapi calls | `lib/strapi.ts` typed client + `lib/community.ts` data layer; `proxy.ts` reuses its base-URL export | grep: no other `fetch(localhost:1337)` call site | **PASS** | detail views perform a second, cheap Strapi existence lookup in the proxy (documented tradeoff: it is what yields real HTTP 404s; caching it risks 404-ing just-created discussions) |
 | **§4.3** | Coherent Server / Client Components choice | RSC for data pages; client only where interaction requires (forms, member panel); sort tabs are plain links | code inspection (Phase 4) | **PASS** | — |
 | **§4.4** | Loading, error and empty states | `app/loading.tsx`, `app/error.tsx`, `components/states.tsx` (Empty/Error/skeletons) | E2E journey 2 asserts the empty state of a filtered space; error state is compile-time + code-reviewed | **PASS** | error state not forced at runtime (would require killing Strapi mid-suite — avoided) |
 | **§4.5** | Responsive interface, global mockup fidelity | ported CSS (typography/chrome) with `@media (max-width:860px/760px)` + bottom mobile nav | Phase 6 Playwright check at 390×844 (`node e2e/mobile-check.mjs`, exit 0): no horizontal overflow on `/`, `/publier`, `/discussions/<id>` (scrollWidth 390 = clientWidth 390), `.bnav` visible, `.side` hidden; full-page screenshot visually inspected. The check initially caught a 23px overflow from the site-bar right links — fixed by hiding `.sb-right` in the ≤860px block, then re-verified | **PASS** (1 layout defect found and fixed) | partial fidelity is explicitly expected (§8: “La reproduction intégrale de la maquette n'est pas demandée”) |
@@ -41,11 +41,47 @@ Phases 1–5. Nothing is marked PASS without evidence.
 | **§6.2** | Tests on refusal of unauthenticated publication | same file | 2 tests → 403 | **PASS** | — |
 | **§6.3** | Tests on protection against author spoofing | same file | payload-author ignored, JWT user wins | **PASS** | — |
 | **§6.4** | Tests on display of discussions | backend association test + `frontend/e2e/community.spec.ts` journeys 1–3 | 23/23 + 5/5 exits 0 | **PASS** | — |
-| **§7.1** | Git repository containing the Next.js and Strapi projects | this repository (`frontend/`, `backend/`) | `git status` review (Phase 6) | **PASS** | nothing committed yet — awaiting approval |
+| **§7.1** | Git repository containing the Next.js and Strapi projects | this repository (`frontend/`, `backend/`) | delivered: commit `65f5641` pushed to `origin/main` (Phases 4–7) | **PASS** | — |
 | **§7.2** | PostgreSQL configuration and content-type schemas | `docker-compose.yml`, `backend/src/api/*` schemas, `.env.example` | files present + runtime verification | **PASS** | — |
 | **§7.3** | Demo-data initialization mechanism | `SEED_DEMO_DATA=true` gate + idempotent seed | re-boot re-check verified during Phase 1 (counts stable, no duplicates) | **PASS** | — |
 | **§7.4** | `.env.example` without secrets | 3 template files (placeholders only; seed password is a `change-me` placeholder) | Phase 6 QA: all referenced variables documented, none committed | **PASS** | — |
 | **§7.5** | README explaining installation, launch and architecture choices | `README.md` rewritten (15 documented sections; every command matches the repo) | Phase 6 static verification of each command (scripts, paths, services) | **PASS** | full clean-host reproduction not exercised (services already run — documented as verified-by-construction) |
-| **§7.6** | Automated tests executed | Phase 5 suites re-run in Phase 6 final QA | `npm test` 23/23 · `npx playwright test` 5/5 · exits 0 | **PASS** | — |
+| **§7.6** | Automated tests executed | Phase 5 suites re-run in Phases 6, 7 and the post-audit regression battery | `npm test` 23/23 · `npx playwright test` 5/5 · exits 0 (latest run in each phase) | **PASS** | — |
 | **§7.7** | “The project must be runnable locally by following the README” | same as §7.3/§7.5 | all documented steps correspond to live verified behavior | **PASS** | — |
 | **§8** | Full mockup reproduction not expected — coherent scope first | two-column layout, feed/detail/publish screens + member panel | design QA Phase 3 | **PASS** | — |
+
+## Appendix — post-audit findings verification (independent review of the delivered state)
+
+Verification performed against the actual repository (not assumptions):
+schemas inspected, PostgreSQL indexes and link rows queried, Git tracking
+checked, resolved source read.
+
+| Finding | Verdict | Evidence | Action |
+|---|---|---|---|
+| `backend/tests/cleanup-ph5.sql` missing from Git | **CONFIRMED** | file present in the working tree and used after every test run, but `backend/.gitignore:70 \*.sql` silently excluded it from the commit | re-included via a targeted negation `!tests/cleanup-ph5.sql`; staged unchanged (script was already transactional and narrowly scoped: marker `LIKE` filters, link-table rows first, `BEGIN…COMMIT`, idempotent) |
+| `oneToOne` author relations in Discussion & Reply schemas | **CONFIRMED** (schema-text level) / data already behaves many-to-one | schemas declared `oneToOne` to `users-permissions.user`; PostgreSQL has **no unique index on `user_id`** (unique only on the `(entity_id, user_id)` pair) and every demo user already owns 2 discussions / replies — the declared constraint was metadata-only and semantically wrong for a community (a member posts several discussions/replies) | **APPLIED on approval**: both schemas now declare `manyToOne`; Strapi restarted; link rows byte-identical to the pre-migration backup, indexes/constraints unchanged, author attribution intact per API probe |
+| Production session cookies not automatically `Secure` | **PARTIALLY CONFIRMED** | `COOKIE_SECURE=true` was a documented manual opt-in; an HTTPS production that never sets it would run without `Secure` | fixed: `lib/cookie-secure.ts` resolves `Secure` per request (`x-forwarded-proto: https` → automatic; env override wins; plain http stays without it); duplicated logic in `app/actions/auth.ts` collapsed into `lib/auth.ts`; regression: `frontend/tests/session-cookie.test.mjs` (4/4) + E2E cookie assertions (`SameSite=Lax`, no `Secure` on http) |
+| Duplicate Strapi lookup in `frontend/proxy.ts` | **CONFIRMED (accepted tradeoff)** | proxy existence-check + page content fetch = 2 calls per detail view, by design (real HTTP 404 before streaming; fail-open on Strapi outage) | documented in the §4.2 row; no change (a cached lookup could 404 just-created discussions — correctness first) |
+| In-memory “Tendances/Sans réponse” over the fetched 25-item page | **PARTIALLY CONFIRMED (documented limitation)** | category filter, date sort and pagination run backend-side; only the two derived tabs are computed on the fetched page | unchanged — proper fix (dedicated backend endpoint) is beyond the mandatory scope |
+| Hardcoded fallback demo password | **CONFIRMED (intentional demo credential)** | `seed.ts` default `SEED_USER_PASSWORD` fallback, pre-existing delivered pattern; real credentials live only in untracked env files | unchanged — removing it would break fresh-clone demo reproducibility; not a production secret |
+
+## Migration record — author relations, oneToOne → manyToOne (applied on approval, before-after verified)
+
+The migration was executed exactly as planned, with no destructive SQL:
+
+1. Pre-migration backup taken (git-ignored):
+   `backend/tests/backup/pre-relation-migration-backup.json` — 6 discussions,
+   5 replies, 3 users, 6 + 5 author link rows (full row data), plus
+   `backend/tests/backup/pre-migration-db-fingerprint.txt` (8 index DDLs).
+2. Both schemas changed from `oneToOne` to `manyToOne` on `author` only
+   (`required: true` kept, targets/other relations untouched).
+3. Strapi reloaded its content-type registry (schema-sync on boot) and booted
+   successfully — **no destructive sync, no SQL table redesign occurred**.
+4. After-restart verification: counts unchanged (11/6/5/3);
+   `discussions_author_lnk` (6 rows) and `replies_author_lnk` (5 rows) are
+   **byte-identical to the backup**; all 8 indexes and every constraint
+   (pkey, `(entity_id, user_id)` unique pair, both FKs per table) unchanged;
+   API probe lists all 6 discussions with their original authors
+   (demo_marie ×2, demo_paul ×2, demo_sophie ×2).
+5. Rollback path if ever needed: restore both schema files and restart —
+   no database change would need reverting.

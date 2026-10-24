@@ -10,7 +10,10 @@
  * member panel that renders it stays behind a <Suspense> boundary.
  */
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { resolveCookieSecure } from '@/lib/cookie-secure';
+
+export { resolveCookieSecure } from '@/lib/cookie-secure';
 
 export const JWT_COOKIE = 'lr_strapi_jwt';
 export const MEMBER_COOKIE = 'lr_strapi_member';
@@ -19,18 +22,38 @@ export const MEMBER_COOKIE = 'lr_strapi_member';
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7;
 
 /**
- * `secure` stays opt-in: the demo runs on plain http://localhost, where a
- * secure cookie would never be sent. Set COOKIE_SECURE=true behind HTTPS.
+ * `secure` is resolved per request: `x-forwarded-proto: https` (production
+ * behind a TLS-terminating proxy) sets it automatically — see
+ * `lib/cookie-secure.ts` — while `COOKIE_SECURE=true` stays the documented
+ * override and plain http://localhost keeps it unset so browsers accept
+ * the cookie. httpOnly and SameSite=Lax are always enforced.
  */
-const secureCookie = process.env.COOKIE_SECURE === 'true';
+export async function requestCookieSecure(): Promise<boolean> {
+  try {
+    const h = await headers();
+    return resolveCookieSecure(h.get('x-forwarded-proto'));
+  } catch {
+    // Headers unavailable in this execution scope: degrade to env-only
+    // resolution (previous behavior), never break the login flow.
+    return resolveCookieSecure(null);
+  }
+}
 
-export const sessionCookieOptions = () => ({
-  httpOnly: true,
-  sameSite: 'lax' as const,
-  secure: secureCookie,
-  path: '/',
-  maxAge: SESSION_MAX_AGE,
-});
+export async function sessionCookieOptions(): Promise<{
+  httpOnly: true;
+  sameSite: 'lax';
+  secure: boolean;
+  path: '/';
+  maxAge: number;
+}> {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: await requestCookieSecure(),
+    path: '/',
+    maxAge: SESSION_MAX_AGE,
+  };
+}
 
 /** Display username of the logged-in member (or null). */
 export async function getLoggedInUsername(): Promise<string | null> {
