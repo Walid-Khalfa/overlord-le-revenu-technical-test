@@ -6,6 +6,7 @@ import { SortTabs } from '@/components/sort-tabs';
 import { DiscussionCard } from '@/components/discussion-card';
 import { EmptyState } from '@/components/states';
 import { Icon } from '@/components/icons';
+import { MemberSection } from '@/components/member-section';
 import { getCategories, getFeed } from '@/lib/community';
 import type { Category, SortKey } from '@/lib/types';
 
@@ -141,6 +142,7 @@ export default async function HomePage(props: PageProps<'/'>) {
         <Hero />
       )}
       <QuickComposer />
+      <MemberSection />
       <CategoryChips categories={categories} active={categorySlug} />
       <SortTabs sort={sort} unansweredCount={unansweredCount} category={categorySlug} />
 

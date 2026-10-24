@@ -55,7 +55,7 @@ export function DiscussionCard({
             <b>{discussion.author.displayName}</b>
             <time dateTime={discussion.createdAt} title={fullDate(discussion.createdAt)}>
               {'· '}
-              {ago(discussion.createdAt)}
+              {ago(discussion.createdAt, discussion.now)}
             </time>
           </span>
           <span className="tstats">
@@ -66,14 +66,18 @@ export function DiscussionCard({
                 ))}
               </span>
             ) : null}
-            <span title="Utile">
-              <Icon name="thumb" />
-              <span className="num">{fmtNum(discussion.likes)}</span>
-            </span>
-            <span className="views" title="Vues">
-              <Icon name="eye" />
-              <span className="num">{fmtNum(discussion.views)}</span>
-            </span>
+            {discussion.likes != null ? (
+              <span title="Utile">
+                <Icon name="thumb" />
+                <span className="num">{fmtNum(discussion.likes)}</span>
+              </span>
+            ) : null}
+            {discussion.views != null ? (
+              <span className="views" title="Vues">
+                <Icon name="eye" />
+                <span className="num">{fmtNum(discussion.views)}</span>
+              </span>
+            ) : null}
           </span>
         </div>
       </div>

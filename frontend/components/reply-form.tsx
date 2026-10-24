@@ -1,63 +1,73 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useActionState, useState, type FormEvent } from 'react';
 import { Icon } from './icons';
-import type { DiscussionType } from '@/lib/types';
+import { createReplyAction, type ReplyFormState } from '@/app/actions/community';
+
+const initialActionState: ReplyFormState = {};
 
 /**
- * Reply form of the discussion detail page.
+ * Reply form of the discussion detail page — now wired to the real Strapi
+ * API through the `createReply` server action (Phase 4).
  *
  * Validation mirrors the Strapi rule (required content, ≥ 2 characters once
- * trimmed). A valid submission does not simulate persistence: it reports that
- * the reply is ready — the real POST arrives in Phase 4.
+ * trimmed) for instant feedback; the backend stays authoritative and the
+ * author ALWAYS comes from the session cookie, so a member can never publish
+ * on behalf of someone else. A new reply is added to the rendered list as
+ * soon as the action resolves.
  */
 export function ReplyForm({
   discussionAuthorName,
   discussionType,
+  discussionId,
 }: {
   discussionAuthorName: string;
-  discussionType: DiscussionType;
+  discussionType: 'question' | 'discussion';
+  /** Strapi documentId the reply is attached to. */
+  discussionId: string;
 }) {
+  const [state, submitAction, pending] = useActionState(createReplyAction, initialActionState);
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
+
+  const message = error ?? state.formError ?? null;
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
     const trimmed = content.trim();
     if (!trimmed) {
+      event.preventDefault();
       setError('Écrivez une réponse avant de publier.');
-      setReady(false);
       document.getElementById('reply-body')?.focus();
       return;
     }
     if (trimmed.length < 2) {
+      event.preventDefault();
       setError('Votre réponse doit contenir au moins 2 caractères.');
-      setReady(false);
       document.getElementById('reply-body')?.focus();
       return;
     }
     setError(null);
-    // Payload valid — no simulated persistence (Phase 4 connects Strapi).
-    setReady(true);
+    // Optimistic clear while the server action persists the reply.
+    setContent('');
   };
 
   const handleChange = (value: string) => {
     setContent(value);
     if (error) setError(null);
-    if (ready) setReady(false);
   };
 
   return (
-    <form className="post reply-box" onSubmit={handleSubmit} noValidate>
+    <form className="post reply-box" action={submitAction} onSubmit={handleSubmit} noValidate>
+      <input type="hidden" name="discussionId" value={discussionId} />
+
       <label htmlFor="reply-body" className="sr-only">
         Votre réponse
       </label>
       <textarea
         id="reply-body"
         name="content"
-        className={error ? 'err' : undefined}
-        style={error ? { borderColor: 'var(--alert)' } : undefined}
+        className={message ? 'err' : undefined}
+        style={message ? { borderColor: 'var(--alert)' } : undefined}
         placeholder={
           discussionType === 'question'
             ? `Partagez votre expérience pour aider ${discussionAuthorName}…`
@@ -65,28 +75,31 @@ export function ReplyForm({
         }
         value={content}
         onChange={(e) => handleChange(e.target.value)}
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? 'reply-err' : 'reply-hint'}
+        aria-invalid={message ? true : undefined}
+        aria-describedby={message ? 'reply-err' : 'reply-hint'}
       />
-      {error ? (
+      {message ? (
         <span className="err-msg" id="reply-err" role="alert">
-          {error}
+          {message}
         </span>
-      ) : null}
-      <div className="reply-foot">
+      ) : (
         <span className="hint" id="reply-hint">
           Réponses vérifiées par le serveur — pas de conseil personnalisé.
         </span>
-        <button className="btn btn-primary" type="submit">
-          Publier ma réponse
+      )}
+
+      <div className="reply-foot">
+        <span className="hint">{pending ? 'Envoi…' : 'Votre réponse sera publiée sous votre pseudo membre.'}</span>
+        <button className="btn btn-primary" type="submit" disabled={pending}>
+          {pending ? 'Envoi…' : 'Publier ma réponse'}
         </button>
       </div>
-      {ready ? (
+
+      {state.ok ? (
         <div className="notice fade-in" role="status">
           <Icon name="check" />
           <span>
-            <b>Réponse valide.</b> Son enregistrement sera connecté à l&apos;API Strapi en
-            phase&nbsp;4 : rien n&apos;a encore été publié.
+            <b>Réponse publiée.</b> Elle apparaît ci-dessus avec votre nom de membre.
           </span>
         </div>
       ) : null}

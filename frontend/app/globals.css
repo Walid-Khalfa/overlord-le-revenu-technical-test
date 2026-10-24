@@ -274,6 +274,7 @@ textarea.input{height:auto;padding:10px 12px;resize:vertical;line-height:1.5}
   .lr-logo{font-size:19px}
   .brand-sub{font-size:12px}
   .sb-links{display:none}
+  .sb-right{display:none}
   .bnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:45;background:var(--glass);-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px);border-top:1px solid var(--hairline);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px));justify-content:space-around;align-items:center}
   .bnav .nav-item{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--ink-3);padding:4px 8px;position:relative;min-width:56px}
   .bnav .nav-item.on{color:var(--brand-text);font-weight:600}

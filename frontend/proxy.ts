@@ -1,22 +1,21 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { DISCUSSIONS } from '@/lib/mock-data';
+import { STRAPI_BASE_URL } from '@/lib/strapi';
 
 /**
- * Known discussion slugs, checked before the route ever renders.
+ * Real-slug handling (Phase 4): a discussion exists only if Strapi answers
+ * for its documentId. Unknown references are rewritten before the route ever
+ * renders, letting the router serve the branded not-found page with a real
+ * HTTP 404 status instead of a streamed-shell 200 (Cache Components keeps
+ * the status 200 once streaming has started).
  *
- * A `notFound()` thrown inside the streamed part of a Cache Components
- * render keeps the static shell's HTTP 200 (documented Next.js behaviour:
- * “Before streaming starts, Next.js returns a 404 status code. After
- * streaming starts, the status code remains 200 and the not-found UI
- * renders”). Intercepting the request here lets the router serve the
- * branded not-found page with a real 404 status instead.
- *
- * Phase 4 note: replace the mock list with a cheap lookup against Strapi
- * (or an edge cache of its slugs).
+ * Runs on the Node.js runtime (Proxy default), so a brief connectivity
+ * failure to Strapi degrades to a pass-through: the app then renders its own
+ * error state instead of wrongly 404-ing real content.
  */
-const KNOWN_SLUGS = new Set(DISCUSSIONS.map((d) => d.slug));
 
-export function proxy(request: NextRequest) {
+const LOOKUP_TIMEOUT_MS = 2_500;
+
+export async function proxy(request: NextRequest) {
   let slug: string;
   try {
     slug = decodeURIComponent(request.nextUrl.pathname.slice('/discussions/'.length));
@@ -24,7 +23,23 @@ export function proxy(request: NextRequest) {
     slug = '';
   }
 
-  if (slug && KNOWN_SLUGS.has(slug)) {
+  if (!slug) {
+    return NextResponse.rewrite(new URL('/discussion-inconnue', request.url));
+  }
+
+  let exists: boolean;
+  try {
+    const res = await fetch(`${STRAPI_BASE_URL}/api/discussions/${encodeURIComponent(slug)}`, {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(LOOKUP_TIMEOUT_MS),
+    });
+    exists = res.status === 200;
+  } catch {
+    // Strapi unreachable: fail open, the app renders its own error state.
+    exists = true;
+  }
+
+  if (exists) {
     return NextResponse.next();
   }
 

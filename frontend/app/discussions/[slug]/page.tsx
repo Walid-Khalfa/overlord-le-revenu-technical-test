@@ -5,23 +5,21 @@ import { Shell } from '@/components/shell';
 import { Avatar } from '@/components/avatar';
 import { Icon } from '@/components/icons';
 import { ReplyForm } from '@/components/reply-form';
-import { getCategories, getDiscussion, getFeed } from '@/lib/community';
+import { MemberSection } from '@/components/member-section';
+import { getCategories, getDiscussion } from '@/lib/community';
 import { ago, fmtNum, fullDate, replyCountLabel } from '@/lib/format';
 
 /**
- * Discussion detail (PDF §2.B): clean URL per discussion, title, content,
- * author, publication date, category and the replies list, plus the reply
- * form (client-side validation; persistence arrives in Phase 4).
+ * Discussion detail (PDF §2.B) — Phase 4: each discussion lives at its own
+ * clean URL `/discussions/<documentId>`, straight from the real Strapi API:
+ * title, content, author, publication date, category and the replies list,
+ * plus the reply form (persisted by the `createReply` server action).
+ *
+ * Detail URLs are only known from Strapi (documentId ids), so this route
+ * renders in blocking mode instead of an instant URL-predefined shell.
  */
 
-// Prerender the six known mock discussions at build time; unknown slugs are
-// intercepted earlier by proxy.ts so the router can answer a real 404.
-
-/** Prerender every known mock discussion at build time. */
-export async function generateStaticParams() {
-  const { discussions } = await getFeed({ sort: 'hot' });
-  return discussions.map((d) => ({ slug: d.slug }));
-}
+export const instant = false;
 
 export async function generateMetadata(
   props: PageProps<'/discussions/[slug]'>
@@ -29,7 +27,6 @@ export async function generateMetadata(
   const { slug } = await props.params;
   const discussion = await getDiscussion(decodeURIComponent(slug));
   if (!discussion) {
-    // Safety net: proxy.ts already intercepts unknown slugs before render.
     return { title: 'Discussion introuvable' };
   }
   return {
@@ -75,11 +72,15 @@ export default async function DiscussionPage(props: PageProps<'/discussions/[slu
           <div>
             <div className="author-name">{discussion.author.displayName}</div>
             <div className="author-sub">
-              <time dateTime={discussion.createdAt} title={`Publié ${ago(discussion.createdAt)}`}>
+              <time dateTime={discussion.createdAt} title={`Publié ${ago(discussion.createdAt, discussion.now)}`}>
                 Publié le {fullDate(discussion.createdAt)}
               </time>
-              {' · '}
-              <span className="num">{fmtNum(discussion.views)}</span> vues
+              {discussion.views != null ? (
+                <>
+                  {' · '}
+                  <span className="num">{fmtNum(discussion.views)}</span> vues
+                </>
+              ) : null}
             </div>
           </div>
         </div>
@@ -103,7 +104,7 @@ export default async function DiscussionPage(props: PageProps<'/discussions/[slu
                 <div className="author-name">{reply.author.displayName}</div>
                 <div className="author-sub">
                   <time dateTime={reply.createdAt} title={`Publié le ${fullDate(reply.createdAt)}`}>
-                    {ago(reply.createdAt)}
+                    {ago(reply.createdAt, discussion.now)}
                   </time>
                 </div>
               </div>
@@ -116,9 +117,12 @@ export default async function DiscussionPage(props: PageProps<'/discussions/[slu
           </article>
         ))}
 
+        <MemberSection />
+
         <ReplyForm
           discussionAuthorName={discussion.author.displayName}
           discussionType={discussion.type}
+          discussionId={discussion.id}
         />
       </section>
     </Shell>

@@ -2,8 +2,9 @@
  * Domain model of the community, shared by every component.
  *
  * The shape mirrors the Strapi content types implemented in Phase 2
- * (Category / Discussion / Reply + Users & Permissions user) so the mock
- * layer can be swapped for real API calls in Phase 4 without touching the UI.
+ * (Category / Discussion / Reply + Users & Permissions user) — since Phase 4
+ * every value is produced by the real Strapi REST API through the data
+ * access layer (`lib/community.ts`), nothing is hardcoded any more.
  */
 
 export type DiscussionType = 'question' | 'discussion';
@@ -12,11 +13,12 @@ export type DiscussionType = 'question' | 'discussion';
 export type SortKey = 'hot' | 'recent' | 'unanswered';
 
 export interface Author {
-  /** Stable identifier — will map to the Strapi user id / documentId. */
+  /** Stable identifier — the Strapi user id. */
   id: string;
   username: string;
+  /** Rendered name: the member's username (only safe field exposed by the API). */
   displayName: string;
-  /** Avatar gradient colour (mockup --av-* palette). */
+  /** Avatar gradient colour (mockup --av-* palette, derived from the username). */
   color: string;
 }
 
@@ -39,6 +41,8 @@ export interface Category {
   description: string;
   icon: CategoryIcon;
   color: string;
+  /** Strapi documentId — used by the creation form to select the category. */
+  documentId?: string;
 }
 
 export interface Reply {
@@ -46,12 +50,15 @@ export interface Reply {
   content: string;
   author: Author;
   createdAt: string;
-  likes: number;
+  /** Unavailable on the current backend (bonus simplified) — undefined. */
+  likes?: number;
+  /** Render-time reference clock, captured inside the cached data scope. */
+  now: string;
 }
 
 export interface Discussion {
   id: string;
-  /** Clean, human-readable URL segment (PDF: “Créer une URL propre”). */
+  /** URL segment of the detail page — the Strapi documentId. */
   slug: string;
   title: string;
   content: string;
@@ -59,8 +66,10 @@ export interface Discussion {
   categorySlug: string;
   author: Author;
   createdAt: string;
-  likes: number;
-  views: number;
+  likes?: number;
+  views?: number;
+  /** Render-time reference clock, captured inside the cached data scope. */
+  now: string;
   replies: Reply[];
 }
 

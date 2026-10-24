@@ -1,19 +1,14 @@
 /**
- * Formatting helpers for mock data.
- *
- * Everything here is deterministic (no `Date.now()`): the mock layer uses a
- * frozen clock so server and client render identical strings — no hydration
- * warnings. Phase 4 will replace this with real dates from Strapi.
+ * Formatting helpers for community dates and counters (real Strapi data
+ * since Phase 4). Relative dates are computed against the render-time clock.
  */
-
-/** Frozen reference time of the fictional dataset. */
-export const MOCK_NOW = new Date('2026-10-23T15:00:00.000Z');
 
 const MINUTE = 60_000;
 
 /** French relative time (“à l'instant”, “il y a 3 h”, “hier”…). */
-export function ago(iso: string, now: Date = MOCK_NOW): string {
-  const min = Math.max(0, (now.getTime() - new Date(iso).getTime()) / MINUTE);
+export function ago(iso: string, now: Date | string = new Date()): string {
+  const at = typeof now === 'string' ? new Date(now) : now;
+  const min = Math.max(0, (at.getTime() - new Date(iso).getTime()) / MINUTE);
   if (min < 1) return "à l'instant";
   if (min < 60) return `il y a ${Math.round(min)} min`;
   const h = Math.round(min / 60);

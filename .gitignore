@@ -20,5 +20,12 @@ backend/.tmp/
 *.log
 npm-debug.log*
 
+# Test artifacts (Phase 5)
+frontend/test-results/
+frontend/playwright-report/
+
+# Manual DB-row backups (Phase 7 cleanup safety net)
+backend/tests/backup/
+
 # OS
 .DS_Store

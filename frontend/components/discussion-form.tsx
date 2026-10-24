@@ -1,22 +1,26 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useActionState, useState, type FormEvent } from 'react';
 import { Icon } from './icons';
+import { createDiscussionAction, type DiscussionFormState } from '@/app/actions/community';
 import type { Category, DiscussionType } from '@/lib/types';
 
 /**
- * Discussion creation form (mockup composer, as a page per the assessment).
+ * Discussion creation form (mockup composer, as a page per the assessment) —
+ * now wired to the real Strapi API through the `createDiscussion` server
+ * action (Phase 4).
  *
- * Client validation mirrors the Strapi rules of Phase 2 (title ≥ 10 and
- * ≤ 150 chars, required content, required category, type question|discussion)
- * so users get instant feedback while the backend stays authoritative.
+ * Client validation mirrors the Strapi rules (title ≥ 10 and ≤ 150 chars,
+ * required content, required category, type question|discussion) so users get
+ * instant feedback, while the backend stays authoritative: any 400 answer is
+ * rendered field by field, and 401/403 point to the member panel above.
  *
- * No persistence is simulated: a valid submission only reports that the
- * payload is ready — the real POST lands in Phase 4.
+ * On success the server action redirects to the created discussion.
  */
 
-type FieldKey = 'title' | 'content' | 'category';
-type FieldErrors = Partial<Record<FieldKey, string>>;
+type FieldKey = 'title' | 'content' | 'category' | 'type';
+
+const initialActionState: DiscussionFormState = {};
 
 const TYPE_OPTIONS: {
   value: DiscussionType;
@@ -50,15 +54,15 @@ export function DiscussionForm({
   categories: Category[];
   initialType?: DiscussionType;
 }) {
-  const [type, setType] = useState<DiscussionType>(initialType);
+  const [state, submitAction, pending] = useActionState(createDiscussionAction, initialActionState);
+  const [type, setType] = useState(initialType);
   const [title, setTitle] = useState('');
   const [categorySlug, setCategorySlug] = useState('');
   const [content, setContent] = useState('');
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [ready, setReady] = useState(false);
+  const [errors, setErrors] = useState<Partial<Record<FieldKey, string>>>({});
 
-  const validate = (): FieldErrors => {
-    const next: FieldErrors = {};
+  const validate = (): Partial<Record<FieldKey, string>> => {
+    const next: Partial<Record<FieldKey, string>> = {};
     const trimmedTitle = title.trim();
     if (trimmedTitle.length < 10) {
       next.title = 'Le titre doit contenir au moins 10 caractères.';
@@ -74,30 +78,34 @@ export function DiscussionForm({
     return next;
   };
 
+  /** Local check runs first; invalid submissions never reach the server. */
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
     const found = validate();
-    setErrors(found);
     if (Object.keys(found).length > 0) {
-      setReady(false);
+      event.preventDefault();
+      setErrors(found);
       const firstKey = (['title', 'category', 'content'] as FieldKey[]).find((k) => found[k]);
       if (firstKey) {
         document.getElementById(`c-${firstKey === 'category' ? 'cat' : firstKey}`)?.focus();
       }
       return;
     }
-    // Payload valid — no simulated persistence (Phase 4 connects Strapi).
-    setReady(true);
+    setErrors({});
   };
 
   /** Any edit invalidates the previous validation result. */
   const touch = () => {
     if (Object.keys(errors).length > 0) setErrors({});
-    if (ready) setReady(false);
   };
 
+  const fieldError = (key: FieldKey): string | undefined => errors[key] ?? state.fieldErrors?.[key];
+
+  const categoryValue = (c: Category) => c.documentId ?? c.slug;
+
+  const selectedCategory = categories.find((c) => categoryValue(c) === categorySlug);
+
   return (
-    <form className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }} onSubmit={handleSubmit} noValidate>
+    <form className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16 }} action={submitAction} onSubmit={handleSubmit} noValidate>
       <fieldset className="types" style={{ border: 0, padding: 0, margin: 0 }} role="radiogroup" aria-label="Type de publication">
         <legend className="sr-only">Type de publication</legend>
         {TYPE_OPTIONS.map((opt) => (
@@ -118,11 +126,16 @@ export function DiscussionForm({
           </label>
         ))}
       </fieldset>
+      {fieldError('type') ? (
+        <span className="err-msg" role="alert">
+          {fieldError('type')}
+        </span>
+      ) : null}
 
       <div className="field">
         <label htmlFor="c-title">Titre</label>
         <input
-          className={`input${errors.title ? ' err' : ''}`}
+          className={`input${fieldError('title') ? ' err' : ''}`}
           id="c-title"
           name="title"
           type="text"
@@ -134,12 +147,12 @@ export function DiscussionForm({
             setTitle(e.target.value);
             touch();
           }}
-          aria-invalid={errors.title ? true : undefined}
-          aria-describedby={errors.title ? 'c-title-err' : 'c-title-hint'}
+          aria-invalid={fieldError('title') ? true : undefined}
+          aria-describedby={fieldError('title') ? 'c-title-err' : 'c-title-hint'}
         />
-        {errors.title ? (
+        {fieldError('title') ? (
           <span className="err-msg" id="c-title-err" role="alert">
-            {errors.title}
+            {fieldError('title')}
           </span>
         ) : (
           <span className="hint" id="c-title-hint">
@@ -151,7 +164,7 @@ export function DiscussionForm({
       <div className="field">
         <label htmlFor="c-category">Espace</label>
         <select
-          className={`input${errors.category ? ' err' : ''}`}
+          className={`input${fieldError('category') ? ' err' : ''}`}
           id="c-category"
           name="category"
           value={categorySlug}
@@ -159,19 +172,19 @@ export function DiscussionForm({
             setCategorySlug(e.target.value);
             touch();
           }}
-          aria-invalid={errors.category ? true : undefined}
-          aria-describedby={errors.category ? 'c-category-err' : undefined}
+          aria-invalid={fieldError('category') ? true : undefined}
+          aria-describedby={fieldError('category') ? 'c-category-err' : undefined}
         >
           <option value="">Choisissez un espace…</option>
           {categories.map((c) => (
-            <option key={c.slug} value={c.slug}>
+            <option key={c.slug} value={categoryValue(c)}>
               {c.name}
             </option>
           ))}
         </select>
-        {errors.category ? (
+        {fieldError('category') ? (
           <span className="err-msg" id="c-category-err" role="alert">
-            {errors.category}
+            {fieldError('category')}
           </span>
         ) : null}
       </div>
@@ -181,7 +194,7 @@ export function DiscussionForm({
           Contenu <span className="muted" style={{ fontWeight: 400 }}>(obligatoire)</span>
         </label>
         <textarea
-          className={`input${errors.content ? ' err' : ''}`}
+          className={`input${fieldError('content') ? ' err' : ''}`}
           id="c-content"
           name="content"
           rows={6}
@@ -191,12 +204,12 @@ export function DiscussionForm({
             setContent(e.target.value);
             touch();
           }}
-          aria-invalid={errors.content ? true : undefined}
-          aria-describedby={errors.content ? 'c-content-err' : 'c-content-hint'}
+          aria-invalid={fieldError('content') ? true : undefined}
+          aria-describedby={fieldError('content') ? 'c-content-err' : 'c-content-hint'}
         />
-        {errors.content ? (
+        {fieldError('content') ? (
           <span className="err-msg" id="c-content-err" role="alert">
-            {errors.content}
+            {fieldError('content')}
           </span>
         ) : (
           <span className="hint" id="c-content-hint">
@@ -204,6 +217,13 @@ export function DiscussionForm({
           </span>
         )}
       </div>
+
+      {state.formError ? (
+        <div className="notice" role="alert">
+          <Icon name="shield" />
+          <span>{state.formError}</span>
+        </div>
+      ) : null}
 
       <p className="compliance">
         <Icon name="shield" />
@@ -214,21 +234,14 @@ export function DiscussionForm({
       </p>
 
       <div className="reply-foot">
-        <span className="hint">Les champs sont validés ici puis de nouveau par le serveur.</span>
-        <button className="btn btn-primary" type="submit">
-          Publier la discussion
+        <span className="hint">
+          {selectedCategory ? `Publication dans « ${selectedCategory.name} » — ` : ''}
+          Les champs sont validés ici puis de nouveau par le serveur.
+        </span>
+        <button className="btn btn-primary" type="submit" disabled={pending}>
+          {pending ? 'Publication…' : 'Publier la discussion'}
         </button>
       </div>
-
-      {ready ? (
-        <div className="notice fade-in" role="status">
-          <Icon name="check" />
-          <span>
-            <b>Formulaire valide.</b> La publication sera connectée à l&apos;API Strapi en
-            phase&nbsp;4 : aucune donnée n&apos;a encore été enregistrée.
-          </span>
-        </div>
-      ) : null}
     </form>
   );
 }
